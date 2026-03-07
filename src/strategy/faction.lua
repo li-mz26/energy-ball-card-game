@@ -1,91 +1,100 @@
 -- 势力类 (Faction)
--- 代表地图上的一个势力/阵营
 
-local CountyData = require("src.data.county_data")
+local General = require("src.entities.general")
 
 local Faction = Class:extend()
 
 function Faction:init(data)
     self.id = data.id or "faction_" .. math.random(10000)
     self.name = data.name or "无名势力"
+    self.isPlayer = data.isPlayer or false
+    self.isAI = not self.isPlayer
+    
+    -- 势力颜色 (用于地图显示)
     self.color = data.color or {1, 1, 1}
     
     -- 控制的郡县
-    self.counties = data.counties or {}
+    self.counties = {}
     
-    -- 将领池
+    -- 将领池 (最多11人上场，但池子可以更大)
     self.generals = data.generals or {}
-    self.maxGenerals = data.maxGenerals or 30
+    self.generalPool = {}  -- 未上场的将领
     
-    -- 势力等级（轮回次数）
-    self.level = data.level or 1
-    
-    -- 是否玩家控制
-    self.isPlayer = data.isPlayer or false
-    
-    -- 势力君主（用于显示）
+    -- 君主/主将
     self.leader = data.leader or nil
     
-    -- 本回合是否已行动
-    self.hasActed = false
+    -- 传承等级 (轮回次数)
+    self.legacyLevel = data.legacyLevel or 0
     
-    -- 势力状态
-    self.defeated = false
+    -- 本轮战绩
+    self.wins = 0
+    self.losses = 0
+    
+    -- 初始化将领池
+    self:organizeGenerals()
+end
+
+-- 整理将领 (前11人上场)
+function Faction:organizeGenerals()
+    self.generals = {}
+    for i = 1, math.min(11, #self.generalPool) do
+        table.insert(self.generals, self.generalPool[i])
+    end
 end
 
 -- 添加郡县
-function Faction:addCounty(countyId)
-    -- 检查是否已拥有
-    for _, id in ipairs(self.counties) do
-        if id == countyId then
-            return false
-        end
-    end
-    
-    table.insert(self.counties, countyId)
-    return true
+function Faction:addCounty(county)
+    table.insert(self.counties, county)
+    county:setOwner(self)
 end
 
 -- 移除郡县
-function Faction:removeCounty(countyId)
-    for i, id in ipairs(self.counties) do
-        if id == countyId then
+function Faction:removeCounty(county)
+    for i, c in ipairs(self.counties) do
+        if c == county then
             table.remove(self.counties, i)
+            county:setOwner(nil)
             return true
         end
     end
     return false
 end
 
--- 检查是否控制某个郡县
-function Faction:controlsCounty(countyId)
-    for _, id in ipairs(self.counties) do
-        if id == countyId then
+-- 获取郡县数量
+function Faction:getCountyCount()
+    return #self.counties
+end
+
+-- 检查是否控制指定郡县
+function Faction:ownsCounty(countyId)
+    for _, county in ipairs(self.counties) do
+        if county.id == countyId then
             return true
         end
     end
     return false
 end
 
--- 获取可进攻的目标（相邻但不属于己方）
+-- 获取可进攻的目标
 function Faction:getAttackableTargets()
     local targets = {}
+    local checked = {}
     
-    for _, countyId in ipairs(self.counties) do
-        local neighbors = CountyData:getNeighbors(countyId)
-        for _, neighbor in ipairs(neighbors) do
-            -- 检查是否已拥有
-            if not self:controlsCounty(neighbor.id) then
-                -- 检查是否已在目标列表
-                local exists = false
-                for _, target in ipairs(targets) do
-                    if target.id == neighbor.id then
-                        exists = true
+    for _, county in ipairs(self.counties) do
+        for _, neighborId in ipairs(county.neighbors) do
+            if not checked[neighborId] then
+                checked[neighborId] = true
+                -- 检查是否已被自己控制
+                local isOwned = false
+                for _, myCounty in ipairs(self.counties) do
+                    if myCounty.id == neighborId then
+                        isOwned = true
                         break
                     end
                 end
-                if not exists then
-                    table.insert(targets, neighbor)
+                
+                if not isOwned then
+                    table.insert(targets, neighborId)
                 end
             end
         end
@@ -95,106 +104,76 @@ function Faction:getAttackableTargets()
 end
 
 -- 添加将领
-function Faction:addGeneral(general)
-    if #self.generals >= self.maxGenerals then
-        return false, "将领池已满"
+function Faction:addGeneral(generalData)
+    local general = General(generalData)
+    table.insert(self.generalPool, general)
+    
+    -- 如果上场将领不足11人，自动补充
+    if #self.generals < 11 then
+        table.insert(self.generals, general)
     end
     
-    table.insert(self.generals, general)
-    return true
+    return general
 end
 
--- 移除将领
-function Faction:removeGeneral(generalId)
-    for i, general in ipairs(self.generals) do
-        if general.id == generalId then
-            table.remove(self.generals, i)
-            return general
-        end
-    end
-    return nil
-end
-
--- 获取存活将领数量
-function Faction:getGeneralCount()
-    return #self.generals
-end
-
--- 选择11名上阵将领（用于战斗）
-function Faction:selectBattleGenerals()
-    local selected = {}
-    local count = math.min(11, #self.generals)
-    
-    -- 优先选择等级高的将领
-    local sorted = {}
-    for _, g in ipairs(self.generals) do
-        table.insert(sorted, g)
-    end
-    
-    table.sort(sorted, function(a, b)
-        return (a.level * 100 + a.rarity.level) > (b.level * 100 + b.rarity.level)
-    end)
-    
-    for i = 1, count do
-        table.insert(selected, sorted[i])
-    end
-    
-    return selected
-end
-
--- 获取势力中心位置（用于地图显示）
-function Faction:getCenterPosition()
-    if #self.counties == 0 then
-        return 0, 0
-    end
-    
-    local totalX, totalY = 0, 0
-    for _, countyId in ipairs(self.counties) do
-        local county = CountyData:getCounty(countyId)
-        if county then
-            totalX = totalX + county.x
-            totalY = totalY + county.y
+-- 招募将领 (从郡县特产)
+function Faction:recruitFromCounty(county, availableGenerals)
+    -- 筛选符合郡县特产的将领
+    local candidates = {}
+    for _, genData in ipairs(availableGenerals) do
+        -- 简单匹配：同区域或同朝代
+        if genData.origin == county.name or genData.dynasty == "汉" then
+            table.insert(candidates, genData)
         end
     end
     
-    return totalX / #self.counties, totalY / #self.counties
-end
-
--- 检查是否被灭亡
-function Faction:checkDefeated()
-    if #self.counties == 0 then
-        self.defeated = true
-        return true
-    end
-    return false
-end
-
--- 合并另一势力的所有郡县和将领
-function Faction:absorb(otherFaction)
-    -- 吞并郡县
-    for _, countyId in ipairs(otherFaction.counties) do
-        self:addCounty(countyId)
+    if #candidates == 0 then
+        -- 随机选择一个
+        candidates = availableGenerals
     end
     
-    -- 收编将领（上限限制）
-    for _, general in ipairs(otherFaction.generals) do
-        self:addGeneral(general)
+    local selected = candidates[math.random(#candidates)]
+    return self:addGeneral(selected)
+end
+
+-- 是否被灭亡
+function Faction:isDefeated()
+    return #self.counties == 0
+end
+
+-- 获取势力强度评分
+function Faction:getPowerScore()
+    local score = 0
+    -- 郡县数
+    score = score + #self.counties * 10
+    
+    -- 将领平均属性
+    for _, gen in ipairs(self.generals) do
+        score = score + (gen.bravery + gen.command + gen.reception) / 10
     end
     
-    -- 标记对方为灭亡
-    otherFaction.defeated = true
-    otherFaction.counties = {}
-    otherFaction.generals = {}
+    return math.floor(score)
 end
 
--- 重置回合状态
-function Faction:resetTurn()
-    self.hasActed = false
+-- 记录胜利
+function Faction:addWin()
+    self.wins = self.wins + 1
 end
 
--- 增加势力等级（轮回继承）
-function Faction:levelUp()
-    self.level = self.level + 1
+-- 记录失败
+function Faction:addLoss()
+    self.losses = self.losses + 1
+end
+
+-- 重置回合统计
+function Faction:resetStats()
+    self.wins = 0
+    self.losses = 0
+end
+
+-- 提升传承等级
+function Faction:levelUpLegacy()
+    self.legacyLevel = self.legacyLevel + 1
 end
 
 return Faction
