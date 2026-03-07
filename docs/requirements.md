@@ -1,10 +1,10 @@
-# 定军山 (Dingjunshan) - 需求文档
+# ShuFengliu (ShuFengliu) - 需求文档
 
 > **"得一将者得天下，失一将者失江山"**
 
 ## 1. 游戏概述
 
-**游戏名称**: 定军山 / Dingjunshan  
+**游戏名称**: ShuFengliu / ShuFengliu  
 **类型**: 回合制策略卡牌游戏 (CCG + 养成)  
 **主题**: 中国古代战争/三国/架空历史  
 **目标平台**: PC / 移动端  
