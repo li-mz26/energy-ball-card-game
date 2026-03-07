@@ -256,11 +256,13 @@ function GeneralSlot:getGeneral() end
 ---@field id string 唯一标识
 ---@field name string 将领名称
 ---@field title string 称号(如"常山赵子龙")
----@field type GeneralType 将领类型
 ---@field rarity Rarity 品阶
 ---@field level number 等级
 ---@field exp number 当前经验
 ---@field maxExp number 升级所需经验
+---@field dynasty string 所属朝代(如"汉"、"魏"、"蜀"、"吴")
+---@field surname string 姓氏(如"赵"、"关"、"张")
+---@field origin string 祖籍/籍贯(如"常山"、"河东"、"涿郡")
 ---@field camp Camp 所属阵营
 ---@field maxHealth number 最大生命值
 ---@field currentHealth number 当前生命值
@@ -332,17 +334,47 @@ function General:canBePlundered() end
 local GeneralStats = {}
 ```
 
-#### 3.7.2 GeneralType (将领类型枚举)
+
+#### 3.7.2 BondSystem (羁绊系统)
 
 ```lua
----@enum GeneralType
-local GeneralType = {
-    CHAMPION = "champion",     -- 猛将
-    COMMANDER = "commander",   -- 良将
-    STRATEGIST = "strategist", -- 儒将
-    RAIDER = "raider",         -- 奇袭
-    OVERLORD = "overlord"      -- 统帅
-}
+---@class BondSystem
+---@field BONUS_DYNASTY number 同朝加成 0.15
+---@field BONUS_SURNAME number 同姓加成 0.10
+---@field BONUS_ORIGIN number 同籍加成 0.10
+---@field BONUS_DYNASTY_SURNAME number 同朝同姓额外加成 0.05
+---@field MAX_SUCCESS_RATE number 最大成功率 0.95
+local BondSystem = {}
+
+---计算输送成功率加成
+---@param sender General 输送方
+---@param receiver General 接收方
+---@return number 总加成率(0-1)
+function BondSystem:calculateBonus(sender, receiver) end
+
+---检查是否同朝
+---@param sender General
+---@param receiver General
+---@return boolean
+function BondSystem:isSameDynasty(sender, receiver) end
+
+---检查是否同姓
+---@param sender General
+---@param receiver General
+---@return boolean
+function BondSystem:isSameSurname(sender, receiver) end
+
+---检查是否同籍
+---@param sender General
+---@param receiver General
+---@return boolean
+function BondSystem:isSameOrigin(sender, receiver) end
+
+---获取羁绊显示信息
+---@param sender General
+---@param receiver General
+---@return table {type: string, bonus: number, description: string}
+function BondSystem:getBondInfo(sender, receiver) end
 ```
 
 #### 3.7.3 Rarity (品阶枚举)
@@ -354,8 +386,7 @@ local Rarity = {
     GREEN = 2,   -- 绿
     BLUE = 3,    -- 蓝
     PURPLE = 4,  -- 紫
-    ORANGE = 5,  -- 橙
-    RED = 6      -- 红
+    ORANGE = 5   -- 橙
 }
 ```
 
@@ -968,8 +999,7 @@ local CONFIG = {
         [Rarity.GREEN] = 43200,    -- 12小时
         [Rarity.BLUE] = 86400,     -- 24小时
         [Rarity.PURPLE] = 172800,  -- 48小时
-        [Rarity.ORANGE] = 259200,  -- 72小时
-        [Rarity.RED] = -1          -- 永久保护
+        [Rarity.ORANGE] = 259200   -- 72小时
     }
 }
 ```
