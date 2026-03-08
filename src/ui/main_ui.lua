@@ -10,6 +10,12 @@ function UI:init(game)
     self.draggingGeneral = nil
     self.dragOffset = {x = 0, y = 0}
     
+    -- 快捷访问
+    self.state = function() return game:getState() end
+    self.players = function() return game:getPlayers() end
+    self.currentRound = function() return game:getCurrentRound() end
+    self.maxRounds = function() return game:getMaxRounds() end
+    
     -- 按钮
     self.buttons = {}
     self:createButtons()
@@ -27,7 +33,7 @@ function UI:createButtons()
         w = 150,
         h = 50,
         action = function() self:confirmDeployment() end,
-        visible = function() return self.game.state == "deployment" end
+        visible = function() return self.state() == "deployment" end
     })
     
     -- 自动布阵按钮
@@ -38,7 +44,7 @@ function UI:createButtons()
         w = 150,
         h = 50,
         action = function() self:autoDeploy() end,
-        visible = function() return self.game.state == "deployment" end
+        visible = function() return self.state() == "deployment" end
     })
     
     -- 清除布阵按钮
@@ -49,7 +55,7 @@ function UI:createButtons()
         w = 150,
         h = 50,
         action = function() self:clearDeployment() end,
-        visible = function() return self.game.state == "deployment" end
+        visible = function() return self.state() == "deployment" end
     })
     
     -- 开始战斗按钮
@@ -60,7 +66,7 @@ function UI:createButtons()
         w = 150,
         h = 50,
         action = function() self:startBattle() end,
-        visible = function() return self.game.state == "deployment" and self:isDeploymentComplete() end
+        visible = function() return self.state() == "deployment" and self:isDeploymentComplete() end
     })
 end
 
@@ -96,13 +102,14 @@ function UI:drawHeader()
     
     -- 回合信息
     love.graphics.setFont(love.graphics.newFont(20))
-    local roundText = string.format("第 %d/%d 轮", self.game.currentRound, self.game.maxRounds)
+    local roundText = string.format("第 %d/%d 轮", self.currentRound(), self.maxRounds())
     love.graphics.print(roundText, 50, 30)
     
     -- 玩家生命值
-    if #self.game.players >= 2 then
-        local p1 = self.game.players[1]
-        local p2 = self.game.players[2]
+    local players = self.players()
+    if #players >= 2 then
+        local p1 = players[1]
+        local p2 = players[2]
         
         love.graphics.printf(p1.name .. " 主营: " .. p1.mainCampHealth, 50, 70, 300, "left")
         love.graphics.printf(p2.name .. " 主营: " .. p2.mainCampHealth, love.graphics.getWidth() - 350, 70, 300, "right")
@@ -112,15 +119,16 @@ end
 function UI:drawDeployment()
     local layout = Constants.FORMATION_LAYOUT
     
+    local players = self.players()
     -- 绘制敌方军阵 (简化显示)
     love.graphics.setColor(0.7, 0.3, 0.3)
     love.graphics.printf("【敌方布阵】", 0, layout.ENEMY_Y - 40, love.graphics.getWidth(), "center")
-    self:drawFormations(self.game.players[2], layout.ENEMY_Y, true)
+    self:drawFormations(players[2], layout.ENEMY_Y, true)
     
     -- 绘制我方军阵
     love.graphics.setColor(0.3, 0.7, 0.3)
     love.graphics.printf("【我方布阵】", 0, layout.PLAYER_Y - 40, love.graphics.getWidth(), "center")
-    self:drawFormations(self.game.players[1], layout.PLAYER_Y, false)
+    self:drawFormations(players[1], layout.PLAYER_Y, false)
     
     -- 绘制手牌
     self:drawHand()
@@ -172,7 +180,7 @@ function UI:drawFormations(player, baseY, isEnemy)
 end
 
 function UI:drawHand()
-    local player = self.game.players[1]
+    local player = self.players()[1]
     local startY = love.graphics.getHeight() - 200
     local cardWidth = 100
     local cardHeight = 140
@@ -251,7 +259,8 @@ function UI:drawButtons()
 end
 
 function UI:drawBattle()
-    local bs = self.game.battleSystem
+    local players = self.players()
+    local bs = self.game.quickBattle.battleSystem
     if not bs then return end
     
     -- 绘制战斗信息
@@ -275,8 +284,9 @@ function UI:drawResult()
     love.graphics.setFont(love.graphics.newFont(36))
     love.graphics.printf("战斗结束", 0, 300, love.graphics.getWidth(), "center")
     
-    local p1 = self.game.players[1]
-    local p2 = self.game.players[2]
+    local players = self.players()
+    local p1 = players[1]
+    local p2 = players[2]
     
     local result = ""
     if p1.mainCampHealth > p2.mainCampHealth then
@@ -306,13 +316,13 @@ function UI:mousepressed(x, y, button)
     end
     
     -- 布阵阶段：选择手牌中的将领
-    if self.game.state == "deployment" then
+    if self.state() == "deployment" then
         self:handleHandClick(x, y)
     end
 end
 
 function UI:handleHandClick(x, y)
-    local player = self.game.players[1]
+    local player = self.players()[1]
     local startY = love.graphics.getHeight() - 200
     local cardWidth = 100
     local cardHeight = 140
@@ -338,13 +348,37 @@ function UI:handleHandClick(x, y)
     
     -- 检查是否点击了军阵槽位
     if self.selectedGeneral then
-        self:tryPlaceGeneral(x, y)
+        local player = self.players()[1]
+        local formations = player.formations
+        local startX = layout.START_X
+        
+        for i, formation in ipairs(formations) do
+            local formX = startX + (i - 1) * (layout.SLOT_WIDTH * 3 + 40)
+            
+            for j, slot in ipairs(formation.slots) do
+                local slotX = formX + (j - 1) * layout.SLOT_WIDTH
+                
+                if x >= slotX and x <= slotX + layout.SLOT_WIDTH - 5 and
+                   y >= layout.PLAYER_Y and y <= layout.PLAYER_Y + layout.SLOT_HEIGHT then
+                    
+                    -- 尝试放置
+                    if slot.general == nil then
+                        player:deployGeneral(self.selectedGeneral, i, j)
+                        self.selectedGeneral = nil
+                        print("部署到 " .. formation.name .. " 第" .. j .. "位")
+                    else
+                        print("该位置已有将领")
+                    end
+                    return
+                end
+            end
+        end
     end
 end
 
 function UI:tryPlaceGeneral(x, y)
     local layout = Constants.FORMATION_LAYOUT
-    local player = self.game.players[1]
+    local player = self.players()[1]
     local startX = layout.START_X
     
     for i, formation in ipairs(player.formations) do
@@ -383,7 +417,7 @@ end
 
 function UI:keypressed(key)
     -- 空格键快速开始战斗（调试）
-    if key == "space" and self.game.state == "deployment" then
+    if key == "space" and self.state() == "deployment" then
         self:autoDeploy()
         self:startBattle()
     end
@@ -391,11 +425,12 @@ end
 
 -- 自动布阵
 function UI:autoDeploy()
-    local player = self.game.players[1]
+    local player = self.players()[1]
     player:clearFormations()
     
     for _, general in ipairs(player.generals) do
-        for i, formation in ipairs(player.formations) do
+        local formations = player.formations
+        for i, formation in ipairs(formations) do
             local slotIdx = formation:getFirstEmptySlot()
             if slotIdx then
                 player:deployGeneral(general, i, slotIdx)
@@ -409,7 +444,7 @@ end
 
 -- 清除布阵
 function UI:clearDeployment()
-    local player = self.game.players[1]
+    local player = self.players()[1]
     player:clearFormations()
     self.selectedGeneral = nil
     print("清除布阵")
@@ -417,8 +452,9 @@ end
 
 -- 检查布阵是否完成
 function UI:isDeploymentComplete()
-    local player = self.game.players[1]
-    for _, formation in ipairs(player.formations) do
+    local player = self.players()[1]
+    local formations = player.formations
+    for _, formation in ipairs(formations) do
         if formation:getGeneralCount() < formation.maxSlots then
             return false
         end

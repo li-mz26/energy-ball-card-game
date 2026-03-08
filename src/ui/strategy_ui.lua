@@ -5,10 +5,10 @@ local CountyData = require("src.data.county_data")
 
 local StrategyUI = Class:extend()
 
-function StrategyUI:init(game, campaign)
+function StrategyUI:init(game)
     self.game = game
-    self.campaign = campaign
-    self.map = campaign.map
+    self.campaign = nil  -- 通过 setCampaign 设置
+    self.map = nil
     
     -- 视口设置
     self.viewX = 0
@@ -20,11 +20,18 @@ function StrategyUI:init(game, campaign)
     self.hoverCounty = nil
     
     -- 郡县位置（简化地图布局）
-    self.countyPositions = self:initCountyPositions()
+    self.countyPositions = {}
     
     -- UI元素
     self.buttons = {}
     self:createButtons()
+end
+
+-- 设置战役对象
+function StrategyUI:setCampaign(campaign)
+    self.campaign = campaign
+    self.map = campaign.map
+    self.countyPositions = self:initCountyPositions()
 end
 
 -- 初始化郡县位置（基于地理位置的简化布局）
@@ -107,6 +114,17 @@ function StrategyUI:draw()
     -- 绘制背景
     love.graphics.setColor(0.1, 0.12, 0.15)
     love.graphics.rectangle("fill", 0, 0, screenW, screenH)
+    
+    -- 战役未设置时只显示标题
+    if not self.campaign then
+        love.graphics.setColor(0.9, 0.85, 0.7)
+        love.graphics.setFont(love.graphics.newFont(24))
+        love.graphics.printf("数风流 - 天下统一战", 0, screenH/2 - 20, screenW, "center")
+        love.graphics.setFont(love.graphics.newFont(16))
+        love.graphics.setColor(0.6, 0.6, 0.6)
+        love.graphics.printf("正在加载战役...", 0, screenH/2 + 20, screenW, "center")
+        return
+    end
     
     -- 绘制地图标题
     love.graphics.setColor(0.9, 0.85, 0.7)
